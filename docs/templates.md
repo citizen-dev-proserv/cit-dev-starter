@@ -1,0 +1,26 @@
+# Templates
+Templates are the basis of new spoke projects. The hub manages projects based on templates. Templates are pre-approved starting points for citizen developer projects. They include the source code, infrastructure, and security controls required to build and run an application. The hub can manage multiple templates, each with its own versioning and lifecycle.
+
+## Template Structure
+A template is a self-contained GitHub repository with all logic to build, deploy and secure an application minus the access credentials (which are created during provisioning). A project is created by copying a template into a new repository. The hub is responsible for bootstrapping the template into a new spoke project. This includes creating credentials and any resources required that can not be created by the template itself. One example of this is if the template requires azure resources to be created. The hub should create a resource group and a managed identity for the spoke project that has contributor access to the resource group. The template is responsible for creating the resources within the resource group  but the resource group and managed identity need to be created by the hub. This adds complexity but allows finer grained access control and security. 
+
+## Creating a template
+1. Create a new GitHub repository for the template.
+2. In the repository, navigate to settings->general and check the box for "Template repository". (This can also be done once as a later step).
+3. The only required files for the template are the `provision.yml` and `destroy.yml` workflows. 
+   1. The `provision.yml` workflow is responsible for creating the resources required for the application to run. This includes creating any infrastructure, deploying the application code, and configuring any necessary settings. It needs a workflow dispatch trigger so that the hub can trigger it.
+   2. The `destroy.yml` workflow is responsible for tearing down the resources created by the provision workflow. It also needs a workflow dispatch trigger so that the hub can trigger it.
+4. While not required, workflows are also needed to deploy the application, any time a change is made to the application code. For some projects, this can be done by adding a trigger to the provision workflow when a push is made to the main branch. For projects that the infra structure creation in the `provision.yml` workflow is separate from the application deployment, a separate deploy workflow is needed.
+5. In addition to the workflows, the template should include a custom skill(s) defining the application/infra architecture. The user should not be allowed to modify the provisioning and destruction logic, but the agent will need to understand it in order to maintain the application.
+6. Sample application code should be included in the template to demonstrate how the application works. This can be a simple "Hello World" application or a more complex application depending on the use case. Best practice is to have a simple application that deploys immediately on repo creation so the user can validate that the project creation was successful. The user can then modify the application code to suit their needs.
+7. Modify the hub project provisioning workflows to include this template. If other templates need similar resources deployed by the hub, it is likely the total effort required to add a new template is to add the template name to the issue template used to kick off the provisioning process. 
+
+## Additional Considerations
+Without additional safeguards, a user can modify the infrastructure and provisioning logic in their project. This bypasses most of what this project is trying to accomplish. In the provisioning logic in the hub, the hub should add repo rules to prevent modification of the workflows which fixes this problem but, is managed by the hub and not the templates.
+
+This project aims to give a framework to enable citizen development without compromising security, governance, and standardization. Part of that is providing the administrators complete control and flexibility to manage template. The downside of this is that a misconfigured template can give users the ability to bypass security and governance controls. As such, it is highly recommended that templates are fully vetted before enabling them for use by citizen developers.
+
+
+
+## Additional Context
+The `provision.yml` and `destroy.yml` workflows are required in the template but create a point of friction in requiring branch rules to be created for each project. Future iterations may use a different approach to provisioning and destroying resources that does not require workflows in the template. The reasoning for why they exist is due to template versioning. If a template was used to create a project and later the template was updated, the project would still use the old version. This matters as if a destroy workflow is centralized, it would break if the new version no longer contained the correct logic to destroy the project's resources. By having the destroy workflow in the template, it is versioned with the template and will always be correct for the project. This is an area our team is actively exploring to see if there is a better approach that does not require provisioning/destruction logic in the template.
