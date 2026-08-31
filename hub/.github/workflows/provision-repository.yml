@@ -1,0 +1,293 @@
+name: Provision repository
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: provision-repository-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: startsWith(github.event.issue.title, '[Create repository]')
+    runs-on: ubuntu-latest
+    env:
+      ORGANIZATION: citizen-dev-proserv
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_SHARED_RESOURCE_GROUP: ${{ vars.AZURE_SHARED_RESOURCE_GROUP }}
+    steps:
+      - name: Read and validate request
+        id: request
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        shell: bash
+        run: |
+          get_field() {
+            awk -v heading="### $1" '
+              $0 == heading { found = 1; next }
+              found && /^### / { exit }
+              found && NF { print; exit }
+            ' <<< "$ISSUE_BODY"
+          }
+
+          repository_name="$(get_field 'Repository name')"
+          description="$(get_field 'Description')"
+          template_repository="$(get_field 'Template repository')"
+          visibility="$(get_field 'Visibility')"
+
+          if [[ ! "$repository_name" =~ ^[A-Za-z0-9._-]{1,100}$ ]]; then
+            echo "Repository name must contain only letters, numbers, periods, underscores, or hyphens." >&2
+            exit 1
+          fi
+
+          if [[ "$visibility" != "private" && "$visibility" != "internal" ]]; then
+            echo "Visibility must be private or internal." >&2
+            exit 1
+          fi
+
+          case "$template_repository" in
+            citizen-dev-proserv/test-template)
+              ;;
+            *)
+              echo "Template repository is not approved." >&2
+              exit 1
+              ;;
+          esac
+
+          output_delimiter="OUTPUT_$(openssl rand -hex 16)"
+          {
+            echo "repository_name=$repository_name"
+            echo "template_repository=$template_repository"
+            echo "visibility=$visibility"
+            echo "description<<$output_delimiter"
+            echo "$description"
+            echo "$output_delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create repository from template
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+          DESCRIPTION: ${{ steps.request.outputs.description }}
+          TEMPLATE_REPOSITORY: ${{ steps.request.outputs.template_repository }}
+          VISIBILITY: ${{ steps.request.outputs.visibility }}
+        shell: bash
+        run: |
+          response="$(gh api \
+            --method POST \
+            "/repos/$TEMPLATE_REPOSITORY/generate" \
+            -f owner="$ORGANIZATION" \
+            -f name="$REPOSITORY_NAME" \
+            -f description="$DESCRIPTION" \
+            -F private=true \
+            -F include_all_branches=false)"
+
+          if [[ "$VISIBILITY" == "internal" ]]; then
+            gh api \
+              --method PATCH \
+              "/repos/$ORGANIZATION/$REPOSITORY_NAME" \
+              -f visibility=internal >/dev/null
+          fi
+
+          echo "organization_id=$(jq -r '.owner.id' <<< "$response")" >> "$GITHUB_OUTPUT"
+          echo "repository_id=$(jq -r '.id' <<< "$response")" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Provision repository Azure access
+        id: azure
+        env:
+          ORGANIZATION_ID: ${{ steps.create.outputs.organization_id }}
+          REPOSITORY_ID: ${{ steps.create.outputs.repository_id }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+        shell: bash
+        run: |
+          resource_group="rg-cd-$REPOSITORY_ID"
+          github_identity_name="id-gh-$REPOSITORY_ID"
+          runtime_identity_name="id-aca-$REPOSITORY_ID"
+          acr_repository="citizen-dev/$(tr '[:upper:]' '[:lower:]' <<< "$REPOSITORY_NAME")"
+
+          acr_count="$(az acr list --resource-group "$AZURE_SHARED_RESOURCE_GROUP" --query 'length(@)' --output tsv)"
+          if [[ "$acr_count" != "1" ]]; then
+            echo "Expected exactly one container registry in $AZURE_SHARED_RESOURCE_GROUP; found $acr_count." >&2
+            exit 1
+          fi
+
+          acr_name="$(az acr list --resource-group "$AZURE_SHARED_RESOURCE_GROUP" --query '[0].name' --output tsv)"
+          acr_id="$(az acr show --name "$acr_name" --resource-group "$AZURE_SHARED_RESOURCE_GROUP" --query id --output tsv)"
+
+          az group create --name "$resource_group" --location "$AZURE_LOCATION" --tags managedBy=central-hub repository="$ORGANIZATION/$REPOSITORY_NAME" >/dev/null
+
+          github_identity="$(az identity create --name "$github_identity_name" --resource-group "$resource_group" --location "$AZURE_LOCATION")"
+          github_client_id="$(jq -r '.clientId' <<< "$github_identity")"
+          github_principal_id="$(jq -r '.principalId' <<< "$github_identity")"
+
+          runtime_identity="$(az identity create --name "$runtime_identity_name" --resource-group "$resource_group" --location "$AZURE_LOCATION")"
+          runtime_identity_id="$(jq -r '.id' <<< "$runtime_identity")"
+          runtime_principal_id="$(jq -r '.principalId' <<< "$runtime_identity")"
+
+          az identity federated-credential create \
+            --name github-main \
+            --identity-name "$github_identity_name" \
+            --resource-group "$resource_group" \
+            --issuer https://token.actions.githubusercontent.com \
+            --subject "repo:$ORGANIZATION@$ORGANIZATION_ID/$REPOSITORY_NAME@$REPOSITORY_ID:ref:refs/heads/main" \
+            --audiences api://AzureADTokenExchange >/dev/null
+
+          resource_group_id="$(az group show --name "$resource_group" --query id --output tsv)"
+          az role assignment create \
+            --assignee-object-id "$github_principal_id" \
+            --assignee-principal-type ServicePrincipal \
+            --role Contributor \
+            --scope "$resource_group_id" >/dev/null
+
+          writer_condition="((!(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/content/read'}) AND !(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/content/write'}) AND !(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/metadata/read'}) AND !(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/metadata/write'})) OR (@Request[Microsoft.ContainerRegistry/registries/repositories:name] StringEqualsIgnoreCase '$acr_repository'))"
+          az role assignment create \
+            --assignee-object-id "$github_principal_id" \
+            --assignee-principal-type ServicePrincipal \
+            --role "Container Registry Repository Writer" \
+            --scope "$acr_id" \
+            --condition "$writer_condition" \
+            --condition-version 2.0 >/dev/null
+
+          reader_condition="((!(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/content/read'}) AND !(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/metadata/read'})) OR (@Request[Microsoft.ContainerRegistry/registries/repositories:name] StringEqualsIgnoreCase '$acr_repository'))"
+          az role assignment create \
+            --assignee-object-id "$runtime_principal_id" \
+            --assignee-principal-type ServicePrincipal \
+            --role "Container Registry Repository Reader" \
+            --scope "$acr_id" \
+            --condition "$reader_condition" \
+            --condition-version 2.0 >/dev/null
+
+          {
+            echo "resource_group=$resource_group"
+            echo "github_client_id=$github_client_id"
+            echo "runtime_identity_id=$runtime_identity_id"
+            echo "acr_name=$acr_name"
+            echo "acr_repository=$acr_repository"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure repository secret and variables
+        env:
+          ACR_NAME: ${{ steps.azure.outputs.acr_name }}
+          ACR_REPOSITORY: ${{ steps.azure.outputs.acr_repository }}
+          AZURE_CLIENT_ID: ${{ steps.azure.outputs.github_client_id }}
+          AZURE_RESOURCE_GROUP: ${{ steps.azure.outputs.resource_group }}
+          ACA_ACR_IDENTITY_ID: ${{ steps.azure.outputs.runtime_identity_id }}
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+          TEMPLATE_REPOSITORY: ${{ steps.request.outputs.template_repository }}
+          REQUEST_NUMBER: ${{ github.event.issue.number }}
+          REQUESTED_BY: ${{ github.event.issue.user.login }}
+        shell: bash
+        run: |
+          repository="$ORGANIZATION/$REPOSITORY_NAME"
+          test_secret="$(openssl rand -hex 32)"
+
+          gh secret set TEST_SECRET --repo "$repository" --body "$test_secret"
+          unset test_secret
+
+          gh variable set PROVISIONED_FROM --repo "$repository" --body "$TEMPLATE_REPOSITORY"
+          gh variable set PROVISION_REQUEST --repo "$repository" --body "$GITHUB_REPOSITORY/issues/$REQUEST_NUMBER"
+          gh variable set PROVISIONED_BY --repo "$repository" --body "$REQUESTED_BY"
+          gh variable set AZURE_CLIENT_ID --repo "$repository" --body "$AZURE_CLIENT_ID"
+          gh variable set AZURE_TENANT_ID --repo "$repository" --body "${{ vars.AZURE_TENANT_ID }}"
+          gh variable set AZURE_SUBSCRIPTION_ID --repo "$repository" --body "${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          gh variable set AZURE_RESOURCE_GROUP --repo "$repository" --body "$AZURE_RESOURCE_GROUP"
+          gh variable set AZURE_SHARED_RESOURCE_GROUP --repo "$repository" --body "$AZURE_SHARED_RESOURCE_GROUP"
+          gh variable set ACR_NAME --repo "$repository" --body "$ACR_NAME"
+          gh variable set ACR_REPOSITORY --repo "$repository" --body "$ACR_REPOSITORY"
+          gh variable set ACA_ACR_IDENTITY_ID --repo "$repository" --body "$ACA_ACR_IDENTITY_ID"
+
+      - name: Trigger provisioned repository workflow
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+        shell: bash
+        run: |
+          repository="$ORGANIZATION/$REPOSITORY_NAME"
+          gh auth setup-git
+          gh repo clone "$repository" provisioned-repository
+          cd provisioned-repository
+          git config user.name "citizen-dev-provisioner"
+          git config user.email "citizen-dev-provisioner@users.noreply.github.com"
+          git commit --allow-empty --message "Trigger initial deployment"
+          git push origin HEAD:main
+
+      - name: Protect managed repository paths
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+        shell: bash
+        run: |
+          repository="$ORGANIZATION/$REPOSITORY_NAME"
+
+          jq -n '{
+            name: "Protect managed infrastructure and workflows",
+            target: "push",
+            enforcement: "active",
+            rules: [{
+              type: "file_path_restriction",
+              parameters: {
+                restricted_file_paths: [
+                  "infra/**/*",
+                  ".github/workflows/**/*"
+                ]
+              }
+            }]
+          }' | gh api \
+            --method POST \
+            "/repos/$repository/rulesets" \
+            --input - >/dev/null
+
+      - name: Report success
+        if: success()
+        shell: bash
+        run: |
+          created_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          gh issue comment "$GITHUB_EVENT_ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "<!-- citizen-dev-lifecycle repository=$ORGANIZATION/$REPOSITORY_NAME repository_id=$REPOSITORY_ID created_at=$created_at -->
+          Created [$ORGANIZATION/$REPOSITORY_NAME](https://github.com/$ORGANIZATION/$REPOSITORY_NAME) from \`$TEMPLATE_REPOSITORY\` and configured its dedicated Azure resource group, deployment identity, ACA image-pull identity, and repository variables.
+
+          This issue now manages the repository lifecycle. Closing it deletes the repository. Repositories are automatically deleted seven days after creation."
+
+          state="$(gh api "/repos/$GITHUB_REPOSITORY/issues/$GITHUB_EVENT_ISSUE_NUMBER" --jq '.state')"
+          if [[ "$state" == "closed" ]]; then
+            gh workflow run delete-repository.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$GITHUB_REF_NAME" \
+              -f issue_number="$GITHUB_EVENT_ISSUE_NUMBER" \
+              -f reason=requested
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+          REPOSITORY_ID: ${{ steps.create.outputs.repository_id }}
+          GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ORGANIZATION: citizen-dev-proserv
+          TEMPLATE_REPOSITORY: ${{ steps.request.outputs.template_repository }}
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          gh issue comment "$GITHUB_EVENT_ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Repository provisioning failed. See the [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) for details."

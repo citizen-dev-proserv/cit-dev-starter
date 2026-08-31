@@ -1,0 +1,88 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-blue-50: oklch(0.97 0.014 254.6);
+  --color-blue-100: oklch(0.932 0.032 255.6);
+  --color-blue-500: oklch(0.623 0.214 259.1);
+  --color-blue-600: oklch(0.546 0.245 262.9);
+  --color-blue-700: oklch(0.488 0.243 264.4);
+
+  /* Contoso brand tokens — a clean, corporate blue/navy system with a single
+     warm accent. Swap these values to reskin the whole dashboard. */
+  --color-brand-deep: #00244a; /* deep navy (section headings, hero) */
+  --color-brand-blue: #0085ca; /* bright accent blue (stats, links) */
+  --color-brand-blue-dark: #0e4067; /* mid navy (button hover) */
+  --color-brand-clarity: #4db4e7; /* lighter blue for accents on navy */
+  --color-brand-green: #16846f;
+  --color-brand-orange: #e57200; /* amber accent used in charts */
+  --color-brand-tint: #e6f0f7; /* pale blue surface */
+  --color-brand-ink: #333333; /* body text */
+
+  /* Body stays in a clean Helvetica/Arial stack; the condensed display face
+     (Roboto Condensed ~ Helvetica Neue Cn) carries headings, stats, nav and
+     buttons. */
+  --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-display:
+    'Roboto Condensed', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --radius-btn: 0px; /* Contoso geometry is square */
+}
+
+@layer components {
+  /* Contoso hero: a deep navy wash with a subtle brighter-blue glow. */
+  .contoso-hero {
+    background:
+      radial-gradient(
+        120% 150% at 90% -20%,
+        rgba(0, 133, 202, 0.4) 0%,
+        rgba(0, 133, 202, 0) 55%
+      ),
+      linear-gradient(120deg, #001730 0%, #00244a 55%, #0e4067 100%);
+  }
+
+  /* Square, uppercase CTA in the condensed display face. */
+  .contoso-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0;
+    padding: 0.7rem 1.75rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
+  }
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-brand-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Contoso headings: condensed, bold, uppercase, deep navy. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+  }
+}

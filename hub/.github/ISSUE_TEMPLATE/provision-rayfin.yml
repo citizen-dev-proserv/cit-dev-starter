@@ -1,0 +1,40 @@
+name: Provision a Rayfin app
+description: Create a Rayfin app repository with a development deployment workflow
+title: "[Provision Rayfin] "
+body:
+  - type: markdown
+    attributes:
+      value: Create a Rayfin app from the standard template. Authentication and development deployment settings are configured automatically.
+  - type: input
+    id: repository-name
+    attributes:
+      label: Repository name
+      description: Use letters, numbers, periods, underscores, and hyphens only.
+      placeholder: my-rayfin-app
+    validations:
+      required: true
+  - type: input
+    id: description
+    attributes:
+      label: Description
+      placeholder: A short description of the app
+  - type: dropdown
+    id: template-repository
+    attributes:
+      label: Template repository
+      options:
+        - citizen-dev-proserv/services-analytics-dashboard-template
+        - citizen-dev-proserv/services-crud-tracker-template
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Visibility
+      options:
+        - private
+        - internal
+      default: 0
+    validations:
+      required: true

@@ -36,6 +36,9 @@ Variables:
     - AZURE_SHARED_RESOURCE_GROUP: The shared resource group name created in the Azure setup.
     - AZURE_LOCATION: The location to provision the resource group and identity of spoke projects.
     - TEMPLATE_ACR_NAME: The name of the Azure container registry created in the Azure setup. This is used to store docker images for spoke projects.
-
 Names of variables and secrets can be changed but the workflows will need to be updated to reflect the changes.
 
+1. For every template in the templates directory, create a repo from the template and in setting of the repo, check the box for "Template repository". This will allow the hub to create new spoke projects from the template.
+
+## Skill Setup
+Currently there is only one skill, create-project. More will come soon. In the create-project skill, you will need to update the url to the url of your hub repo.

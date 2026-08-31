@@ -1,0 +1,202 @@
+name: Delete Rayfin repository
+
+on:
+  issues:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Provisioning issue number
+        required: true
+        type: string
+      reason:
+        description: Reason for deletion
+        required: false
+        default: requested
+        type: choice
+        options:
+          - requested
+          - expired
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: delete-rayfin-repository-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[Provision Rayfin]')
+    runs-on: ubuntu-latest
+    env:
+      ORGANIZATION: citizen-dev-proserv
+    steps:
+      - name: Resolve managed Rayfin repository
+        id: lifecycle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        shell: bash
+        run: |
+          issue="$(gh api "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER")"
+          title="$(jq -r '.title' <<< "$issue")"
+
+          if [[ "$title" != '[Provision Rayfin]'* ]]; then
+            echo "Issue $ISSUE_NUMBER is not a Rayfin provisioning issue." >&2
+            exit 1
+          fi
+
+          comments="$(gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100")"
+          metadata="$(jq -c '[.[][] | select(.user.login == "github-actions[bot]") | .body | try capture("<!-- citizen-dev-lifecycle repository=(?<repository>[^ ]+) repository_id=(?<repository_id>[0-9]+) created_at=(?<created_at>[^ ]+) -->") catch empty] | last // empty' <<< "$comments")"
+
+          if [[ -z "$metadata" ]]; then
+            echo "Issue $ISSUE_NUMBER has no managed repository lifecycle marker; nothing will be deleted."
+            echo "managed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          repository="$(jq -r '.repository' <<< "$metadata")"
+          repository_id="$(jq -r '.repository_id' <<< "$metadata")"
+          if [[ "$repository" != "$ORGANIZATION/"* || "$repository" == "$GITHUB_REPOSITORY" ]]; then
+            echo "Refusing to delete repository outside the managed organization or the central hub itself: $repository" >&2
+            exit 1
+          fi
+
+          echo "managed=true" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "repository_id=$repository_id" >> "$GITHUB_OUTPUT"
+
+      - name: Destroy Rayfin project
+        if: steps.lifecycle.outputs.managed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY: ${{ steps.lifecycle.outputs.repository }}
+        shell: bash
+        run: |
+          known_runs="$(gh run list \
+            --repo "$REPOSITORY" \
+            --workflow destroy.yml \
+            --event workflow_dispatch \
+            --limit 100 \
+            --json databaseId \
+            --jq '[.[].databaseId]')"
+
+          gh workflow run destroy.yml --repo "$REPOSITORY" --ref main
+
+          run_id=''
+          for attempt in {1..30}; do
+            runs="$(gh run list \
+              --repo "$REPOSITORY" \
+              --workflow destroy.yml \
+              --event workflow_dispatch \
+              --limit 100 \
+              --json databaseId,createdAt)"
+            run_id="$(jq -r \
+              --argjson known "$known_runs" \
+              '[.[] | select(.databaseId as $id | ($known | index($id) | not))] | sort_by(.createdAt) | first.databaseId // empty' \
+              <<< "$runs")"
+
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+
+            echo "Waiting for the destroy workflow run to start ($attempt/30)."
+            sleep 10
+          done
+
+          if [[ -z "$run_id" ]]; then
+            echo "Timed out waiting for destroy.yml to start in $REPOSITORY." >&2
+            exit 1
+          fi
+
+          gh run watch "$run_id" --repo "$REPOSITORY" --exit-status
+
+      - name: Sign in to Azure
+        if: steps.lifecycle.outputs.managed == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Delete Rayfin deployment identity
+        if: steps.lifecycle.outputs.managed == 'true'
+        env:
+          REPOSITORY_ID: ${{ steps.lifecycle.outputs.repository_id }}
+        shell: bash
+        run: |
+          resource_group="rg-cd-$REPOSITORY_ID"
+          identity_name="id-gh-$REPOSITORY_ID"
+
+          if ! az group exists --name "$resource_group" | grep -qx true; then
+            echo "$resource_group is already deleted."
+            exit 0
+          fi
+
+          if az identity show --name "$identity_name" --resource-group "$resource_group" >/dev/null 2>&1; then
+            az identity delete --name "$identity_name" --resource-group "$resource_group"
+          else
+            echo "$identity_name is already deleted."
+          fi
+
+          az group delete --name "$resource_group" --yes
+
+      - name: Delete repository
+        if: steps.lifecycle.outputs.managed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY: ${{ steps.lifecycle.outputs.repository }}
+          REPOSITORY_ID: ${{ steps.lifecycle.outputs.repository_id }}
+        shell: bash
+        run: |
+          response_headers="$(gh api --include "/repositories/$REPOSITORY_ID" 2>/dev/null || true)"
+          status="$(head -n 1 <<< "$response_headers" | awk '{print $2}')"
+
+          case "$status" in
+            200)
+              current_repository="$(gh api "/repositories/$REPOSITORY_ID" --jq '.full_name')"
+              if [[ "$current_repository" != "$ORGANIZATION/"* || "$current_repository" == "$GITHUB_REPOSITORY" ]]; then
+                echo "Refusing to delete repository outside the managed organization or the central hub itself: $current_repository" >&2
+                exit 1
+              fi
+              gh api --method DELETE "/repos/$current_repository"
+              ;;
+            404)
+              echo "$REPOSITORY is already deleted."
+              ;;
+            *)
+              echo "Unable to verify $REPOSITORY before deletion (HTTP ${status:-unknown})." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Report deletion
+        if: success() && steps.lifecycle.outputs.managed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ steps.lifecycle.outputs.issue_number }}
+          REPOSITORY: ${{ steps.lifecycle.outputs.repository }}
+          REASON: ${{ inputs.reason || 'requested' }}
+        shell: bash
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Deleted Rayfin repository \`$REPOSITORY\` (reason: \`$REASON\`)."
+
+          state="$(gh api "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" --jq '.state')"
+          if [[ "$state" == "open" ]]; then
+            gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        shell: bash
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Rayfin repository deletion failed. See the [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) for details."

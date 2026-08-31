@@ -1,0 +1,8 @@
+apiVersion: v1
+metadata:
+  name: services-crud-tracker
+  displayName: Contoso Services Request Tracker
+  description: Fabric-authenticated CRUD app on a Rayfin MSSQL backend — create, edit, and delete service requests with live KPIs, styled like the Contoso analytics dashboard but with full write-back.
+entries:
+  - path: .
+    name: Contoso Services Request Tracker

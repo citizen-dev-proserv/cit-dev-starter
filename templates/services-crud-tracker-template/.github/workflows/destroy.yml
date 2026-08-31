@@ -1,0 +1,104 @@
+name: Destroy Fabric app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rayfin-production
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    name: Destroy Rayfin app
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      RAYFIN_WORKSPACE_ID: ${{ vars.RAYFIN_WORKSPACE_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate confirmation and project configuration
+        id: project
+        shell: bash
+        run: |
+          item_name="$(ruby -ryaml -e 'print YAML.safe_load_file("rayfin/rayfin.yml").fetch("id")')"
+          if [[ -z "$item_name" || "$item_name" == *$'\n'* || "$item_name" == *$'\r'* ]]; then
+            echo "rayfin/rayfin.yml must contain a single-line project id." >&2
+            exit 1
+          fi
+          echo "item_name=$item_name" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in with GitHub OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Acquire Fabric token
+        shell: bash
+        run: |
+          token="$(az account get-access-token \
+            --resource https://api.fabric.microsoft.com \
+            --query accessToken \
+            --output tsv)"
+          echo "::add-mask::$token"
+          echo "RAYFIN_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Delete Fabric app
+        shell: bash
+        env:
+          ITEM_NAME: ${{ steps.project.outputs.item_name }}
+        run: |
+          api_base="https://api.fabric.microsoft.com/v1"
+          next_url="$api_base/workspaces/$RAYFIN_WORKSPACE_ID/items?type=AppBackend"
+          matches="$(mktemp)"
+
+          while [[ -n "$next_url" ]]; do
+            if [[ "$next_url" != "$api_base/"* ]]; then
+              echo "Fabric returned an unexpected continuation URL." >&2
+              exit 1
+            fi
+
+            response="$(curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $RAYFIN_TOKEN" \
+              "$next_url")"
+            jq --arg name "$ITEM_NAME" -r \
+              '.value[] | select((.displayName | ascii_downcase) == ($name | ascii_downcase)) | [.id, .displayName] | @tsv' \
+              <<< "$response" >> "$matches"
+            next_url="$(jq -r '.continuationUri // empty' <<< "$response")"
+          done
+
+          match_count="$(wc -l < "$matches")"
+          if [[ "$match_count" -eq 0 ]]; then
+            echo "No AppBackend named '$ITEM_NAME' exists in workspace '$RAYFIN_WORKSPACE_ID'. Nothing was deleted."
+            exit 0
+          fi
+          if [[ "$match_count" -ne 1 ]]; then
+            echo "Found $match_count AppBackend items named '$ITEM_NAME'; refusing an ambiguous deletion." >&2
+            exit 1
+          fi
+
+          IFS=$'\t' read -r item_id display_name < "$matches"
+          echo "Deleting AppBackend '$display_name' ($item_id)..."
+          curl --fail-with-body --silent --show-error \
+            --request DELETE \
+            --header "Authorization: Bearer $RAYFIN_TOKEN" \
+            "$api_base/workspaces/$RAYFIN_WORKSPACE_ID/items/$item_id"
+
+          status_code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer $RAYFIN_TOKEN" \
+            "$api_base/workspaces/$RAYFIN_WORKSPACE_ID/items/$item_id")"
+          if [[ "$status_code" != "404" ]]; then
+            echo "Deletion verification failed: expected HTTP 404, received $status_code." >&2
+            exit 1
+          fi
+          echo "Fabric app '$display_name' was deleted and verified absent."

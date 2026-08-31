@@ -1,0 +1,39 @@
+name: Create a repository
+description: Create a repository in citizen-dev-proserv from the approved template
+title: "[Create repository] "
+body:
+  - type: markdown
+    attributes:
+      value: Provide the settings for the new repository.
+  - type: input
+    id: repository-name
+    attributes:
+      label: Repository name
+      description: Use letters, numbers, periods, underscores, and hyphens only.
+      placeholder: my-new-repository
+    validations:
+      required: true
+  - type: input
+    id: description
+    attributes:
+      label: Description
+      placeholder: A short description of the repository
+  - type: dropdown
+    id: template-repository
+    attributes:
+      label: Template repository
+      options:
+        - citizen-dev-proserv/test-template
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Visibility
+      options:
+        - private
+        - internal
+      default: 0
+    validations:
+      required: true

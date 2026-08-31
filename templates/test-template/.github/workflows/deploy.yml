@@ -1,0 +1,70 @@
+name: Build, test, and deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  IMAGE_NAME: ${{ vars.ACR_REPOSITORY }}
+  IMAGE_TAG: ${{ github.sha }}
+  AZURE_SHARED_RESOURCE_GROUP: ${{ vars.AZURE_SHARED_RESOURCE_GROUP }}
+  ACA_ACR_IDENTITY_ID: ${{ vars.ACA_ACR_IDENTITY_ID }}
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --tag "${IMAGE_NAME}:${IMAGE_TAG}" .
+
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign in to Azure Container Registry
+        run: az acr login --name "${ACR_NAME}"
+
+      - name: Push image to Azure Container Registry
+        run: |
+          registry="${ACR_NAME}.azurecr.io"
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${registry}/${IMAGE_NAME}:${IMAGE_TAG}"
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${registry}/${IMAGE_NAME}:latest"
+          docker push "${registry}/${IMAGE_NAME}:${IMAGE_TAG}"
+          docker push "${registry}/${IMAGE_NAME}:latest"
+
+      - name: Deploy Azure Container App
+        shell: bash
+        run: |
+          container_app_url=$(az deployment group create \
+            --name "deploy-${GITHUB_RUN_ID}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --template-file infra/main.bicep \
+            --parameters \
+              imageName="${IMAGE_NAME}" \
+              imageTag="${IMAGE_TAG}" \
+              acrLoginServer="${ACR_NAME}.azurecr.io" \
+              acrPullIdentityId="${ACA_ACR_IDENTITY_ID}" \
+            --query properties.outputs.containerAppUrl.value \
+            --output tsv)
+
+          echo "### Deployment complete" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Your app is running at [${container_app_url}](${container_app_url})." >> "${GITHUB_STEP_SUMMARY}"
+          echo "Container App URL: ${container_app_url}"

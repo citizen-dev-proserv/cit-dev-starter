@@ -1,0 +1,3 @@
+# Require maintainer approval for infrastructure and ownership changes.
+/infra/ @coleflennikenmsft
+/.github/CODEOWNERS @coleflennikenmsft

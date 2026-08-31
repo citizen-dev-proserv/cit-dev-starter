@@ -1,0 +1,4 @@
+# Dependencies for the spreadsheet-to-datamodel profiler.
+# Install into a throwaway/venv — these are design-time tools, not app runtime deps.
+pandas>=2.2
+openpyxl>=3.1

@@ -1,0 +1,65 @@
+name: Deploy to Fabric
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rayfin-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Rayfin app
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      RAYFIN_WORKSPACE_ID: ${{ vars.RAYFIN_WORKSPACE_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sign in with GitHub OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Acquire Fabric token
+        shell: bash
+        run: |
+          token="$(az account get-access-token \
+            --resource https://api.fabric.microsoft.com \
+            --query accessToken \
+            --output tsv)"
+          echo "::add-mask::$token"
+          echo "RAYFIN_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Deploy to Fabric
+        shell: bash
+        run: >-
+          npx rayfin up
+          --tenant "$AZURE_TENANT_ID"
+          --workspace-id "$RAYFIN_WORKSPACE_ID"
+          --yes
+
+      - name: Verify deployment
+        run: npx rayfin up status

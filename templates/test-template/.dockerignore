@@ -1,0 +1,6 @@
+.git
+.github
+infra
+__pycache__
+*.py[cod]
+README.md

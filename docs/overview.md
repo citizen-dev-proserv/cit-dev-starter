@@ -2,7 +2,7 @@
 
 AI coding agents are expanding what citizen developers can build. Work that once required a low-code platform or a specialist team can increasingly begin with a natural-language request and become a working application in hours rather than weeks.
 
-That shift creates real opportunity, but it also changes the risk profile. A useful application running on one person's computer is not yet an organization-ready service. Scaling citizen development requires more than capable tools; it requires an operating model that makes the secure, supportable path the easiest path to follow.
+That shift creates real opportunity, but it also changes the risk profile. A useful application running on one person's computer is not yet an organization-ready service. Scaling citizen development requires an operating model that makes the secure, supportable path the easiest path to follow.
 
 This document describes a hub-and-spoke platform designed to provide that path.
 

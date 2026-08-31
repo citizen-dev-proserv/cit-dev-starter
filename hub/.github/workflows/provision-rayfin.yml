@@ -1,0 +1,353 @@
+name: Provision Rayfin app
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: provision-rayfin-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: startsWith(github.event.issue.title, '[Provision Rayfin]')
+    runs-on: ubuntu-latest
+    env:
+      ORGANIZATION: citizen-dev-proserv
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+    steps:
+      - name: Read and validate request
+        id: request
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          get_field() {
+            awk -v heading="### $1" '
+              $0 == heading { found = 1; next }
+              found && /^### / { exit }
+              found && NF { print; exit }
+            ' <<< "$ISSUE_BODY"
+          }
+
+          repository_name="$(get_field 'Repository name')"
+          description="$(get_field 'Description')"
+          template_repository="$(get_field 'Template repository')"
+          visibility="$(get_field 'Visibility')"
+
+          if [[ ! "$repository_name" =~ ^[A-Za-z0-9._-]{1,100}$ ]]; then
+            echo "Repository name must contain only letters, numbers, periods, underscores, or hyphens." >&2
+            exit 1
+          fi
+
+          if [[ "$visibility" != "private" && "$visibility" != "internal" ]]; then
+            echo "Visibility must be private or internal." >&2
+            exit 1
+          fi
+
+          case "$template_repository" in
+            citizen-dev-proserv/services-analytics-dashboard-template|\
+            citizen-dev-proserv/services-crud-tracker-template)
+              ;;
+            *)
+              echo "Rayfin template repository is not approved." >&2
+              exit 1
+              ;;
+          esac
+
+          normalized_repository_name="$(tr '[:upper:]' '[:lower:]' <<< "$repository_name" \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+          item_prefix="rayfin-"
+          item_suffix="-$ISSUE_NUMBER"
+          max_base_length=$((63 - ${#item_prefix} - ${#item_suffix}))
+          item_base="${normalized_repository_name:0:max_base_length}"
+          item_base="${item_base%-}"
+          rayfin_item_id="${item_prefix}${item_base}${item_suffix}"
+
+          if [[ ! "$rayfin_item_id" =~ ^[a-z][a-z0-9-]{0,62}$ ]]; then
+            echo "Generated Rayfin item ID is not a valid Fabric item identifier: $rayfin_item_id" >&2
+            exit 1
+          fi
+
+          output_delimiter="OUTPUT_$(openssl rand -hex 16)"
+          {
+            echo "repository_name=$repository_name"
+            echo "template_repository=$template_repository"
+            echo "visibility=$visibility"
+            echo "rayfin_item_id=$rayfin_item_id"
+            echo "rayfin_item_name=$rayfin_item_id"
+            echo "description<<$output_delimiter"
+            echo "$description"
+            echo "$output_delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Fabric provisioning access
+        env:
+          PROVISIONING_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          WORKSPACE_ID: ${{ secrets.TEMPLATE_RAYFIN_WORKSPACE_ID }}
+        shell: bash
+        run: |
+          if [[ ! "$WORKSPACE_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "TEMPLATE_RAYFIN_WORKSPACE_ID must be configured as a UUID." >&2
+            exit 1
+          fi
+
+          if ! assignments="$(az rest \
+            --method GET \
+            --url "https://api.fabric.microsoft.com/v1/workspaces/$WORKSPACE_ID/roleAssignments" \
+            --resource https://api.fabric.microsoft.com 2>fabric-access-error.log)"; then
+            cat fabric-access-error.log >&2
+            echo "Grant the central provisioning identity ($PROVISIONING_CLIENT_ID) Admin access to Fabric workspace $WORKSPACE_ID." >&2
+            exit 1
+          fi
+
+          provisioning_role="$(jq -r \
+            --arg client_id "${PROVISIONING_CLIENT_ID,,}" \
+            '[.value[] | select((.principal.servicePrincipalDetails.aadAppId // "" | ascii_downcase) == $client_id) | .role] | first // empty' \
+            <<< "$assignments")"
+
+          if [[ "$provisioning_role" != "Admin" ]]; then
+            echo "The central provisioning identity ($PROVISIONING_CLIENT_ID) must be an Admin of Fabric workspace $WORKSPACE_ID; current role: ${provisioning_role:-none}." >&2
+            exit 1
+          fi
+
+      - name: Create repository from Rayfin template
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+          DESCRIPTION: ${{ steps.request.outputs.description }}
+          TEMPLATE_REPOSITORY: ${{ steps.request.outputs.template_repository }}
+          VISIBILITY: ${{ steps.request.outputs.visibility }}
+        shell: bash
+        run: |
+          response="$(gh api \
+            --method POST \
+            "/repos/$TEMPLATE_REPOSITORY/generate" \
+            -f owner="$ORGANIZATION" \
+            -f name="$REPOSITORY_NAME" \
+            -f description="$DESCRIPTION" \
+            -F private=true \
+            -F include_all_branches=false)"
+
+          if [[ "$VISIBILITY" == "internal" ]]; then
+            gh api \
+              --method PATCH \
+              "/repos/$ORGANIZATION/$REPOSITORY_NAME" \
+              -f visibility=internal >/dev/null
+          fi
+
+          echo "organization_id=$(jq -r '.owner.id' <<< "$response")" >> "$GITHUB_OUTPUT"
+          echo "repository_id=$(jq -r '.id' <<< "$response")" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Rayfin deployment identity
+        id: fabric
+        env:
+          ORGANIZATION_ID: ${{ steps.create.outputs.organization_id }}
+          REPOSITORY_ID: ${{ steps.create.outputs.repository_id }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+          WORKSPACE_ID: ${{ secrets.TEMPLATE_RAYFIN_WORKSPACE_ID }}
+        shell: bash
+        run: |
+          if [[ ! "$WORKSPACE_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "TEMPLATE_RAYFIN_WORKSPACE_ID must be configured as a UUID." >&2
+            exit 1
+          fi
+
+          resource_group="rg-cd-$REPOSITORY_ID"
+          identity_name="id-gh-$REPOSITORY_ID"
+
+          az group create \
+            --name "$resource_group" \
+            --location "$AZURE_LOCATION" \
+            --tags managedBy=central-hub repository="$ORGANIZATION/$REPOSITORY_NAME" workload=rayfin >/dev/null
+
+          identity="$(az identity create \
+            --name "$identity_name" \
+            --resource-group "$resource_group" \
+            --location "$AZURE_LOCATION")"
+          client_id="$(jq -r '.clientId' <<< "$identity")"
+          principal_id="$(jq -r '.principalId' <<< "$identity")"
+
+          az identity federated-credential create \
+            --name github-main \
+            --identity-name "$identity_name" \
+            --resource-group "$resource_group" \
+            --issuer https://token.actions.githubusercontent.com \
+            --subject "repo:$ORGANIZATION@$ORGANIZATION_ID/$REPOSITORY_NAME@$REPOSITORY_ID:ref:refs/heads/main" \
+            --audiences api://AzureADTokenExchange >/dev/null
+
+          role_assignment_body="$(jq -cn \
+            --arg principal_id "$principal_id" \
+            '{principal: {id: $principal_id, type: "ServicePrincipal"}, role: "Contributor"}')"
+          role_assignment=''
+
+          for attempt in {1..20}; do
+            if role_assignment="$(az rest \
+              --method POST \
+              --url "https://api.fabric.microsoft.com/v1/workspaces/$WORKSPACE_ID/roleAssignments" \
+              --resource https://api.fabric.microsoft.com \
+              --body "$role_assignment_body" 2>fabric-role-error.log)"; then
+              break
+            fi
+
+            if ! grep -q 'PrincipalNotFound' fabric-role-error.log || [[ "$attempt" == "20" ]]; then
+              cat fabric-role-error.log >&2
+              exit 1
+            fi
+
+            echo "Managed identity is not visible to Fabric yet; retrying workspace access ($attempt/20)."
+            sleep 15
+          done
+
+          {
+            echo "client_id=$client_id"
+            echo "resource_group=$resource_group"
+            echo "role_assignment_id=$(jq -r '.id' <<< "$role_assignment")"
+            echo "workspace_id=${WORKSPACE_ID,,}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure Rayfin deployment settings
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          AZURE_CLIENT_ID: ${{ steps.fabric.outputs.client_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_RESOURCE_GROUP: ${{ steps.fabric.outputs.resource_group }}
+          RAYFIN_WORKSPACE_ID: ${{ steps.fabric.outputs.workspace_id }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+          TEMPLATE_REPOSITORY: ${{ steps.request.outputs.template_repository }}
+          REQUEST_NUMBER: ${{ github.event.issue.number }}
+          REQUESTED_BY: ${{ github.event.issue.user.login }}
+        shell: bash
+        run: |
+          repository="$ORGANIZATION/$REPOSITORY_NAME"
+
+          for required_value in AZURE_CLIENT_ID AZURE_SUBSCRIPTION_ID AZURE_TENANT_ID RAYFIN_WORKSPACE_ID; do
+            if [[ -z "${!required_value}" ]]; then
+              echo "$required_value is not configured in central-hub." >&2
+              exit 1
+            fi
+          done
+
+          gh variable set AZURE_CLIENT_ID --repo "$repository" --body "$AZURE_CLIENT_ID"
+          gh variable set AZURE_SUBSCRIPTION_ID --repo "$repository" --body "$AZURE_SUBSCRIPTION_ID"
+          gh variable set AZURE_TENANT_ID --repo "$repository" --body "$AZURE_TENANT_ID"
+          gh variable set AZURE_RESOURCE_GROUP --repo "$repository" --body "$AZURE_RESOURCE_GROUP"
+          gh variable set RAYFIN_WORKSPACE_ID --repo "$repository" --body "$RAYFIN_WORKSPACE_ID"
+          gh variable set PROVISIONED_FROM --repo "$repository" --body "$TEMPLATE_REPOSITORY"
+          gh variable set PROVISION_REQUEST --repo "$repository" --body "$GITHUB_REPOSITORY/issues/$REQUEST_NUMBER"
+          gh variable set PROVISIONED_BY --repo "$repository" --body "$REQUESTED_BY"
+
+      - name: Trigger initial Rayfin deployment
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          RAYFIN_ITEM_ID: ${{ steps.request.outputs.rayfin_item_id }}
+          RAYFIN_ITEM_NAME: ${{ steps.request.outputs.rayfin_item_name }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+        shell: bash
+        run: |
+          repository="$ORGANIZATION/$REPOSITORY_NAME"
+          gh auth setup-git
+          gh repo clone "$repository" provisioned-repository
+          cd provisioned-repository
+
+          rayfin_config="rayfin/rayfin.yml"
+          if [[ "$(grep -c '^id:' "$rayfin_config")" != "1" || "$(grep -c '^name:' "$rayfin_config")" != "1" ]]; then
+            echo "$rayfin_config must contain exactly one top-level id and name." >&2
+            exit 1
+          fi
+
+          awk -v item_id="$RAYFIN_ITEM_ID" -v item_name="$RAYFIN_ITEM_NAME" '
+            /^id:/ { print "id: " item_id; next }
+            /^name:/ { print "name: " item_name; next }
+            { print }
+          ' "$rayfin_config" > "$rayfin_config.tmp"
+          mv "$rayfin_config.tmp" "$rayfin_config"
+
+          git config user.name "citizen-dev-provisioner"
+          git config user.email "citizen-dev-provisioner@users.noreply.github.com"
+          git add "$rayfin_config"
+          git commit --message "Configure Rayfin app $RAYFIN_ITEM_ID"
+          git push origin HEAD:main
+
+      - name: Protect managed Rayfin paths
+        env:
+          GH_TOKEN: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+        shell: bash
+        run: |
+          repository="$ORGANIZATION/$REPOSITORY_NAME"
+
+          jq -n '{
+            name: "Protect managed Rayfin configuration and workflows",
+            target: "push",
+            enforcement: "active",
+            rules: [{
+              type: "file_path_restriction",
+              parameters: {
+                restricted_file_paths: [
+                  "rayfin/rayfin.yml",
+                  ".github/workflows/**/*"
+                ]
+              }
+            }]
+          }' | gh api \
+            --method POST \
+            "/repos/$repository/rulesets" \
+            --input - >/dev/null
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
+          REPOSITORY_ID: ${{ steps.create.outputs.repository_id }}
+          ROLE_ASSIGNMENT_ID: ${{ steps.fabric.outputs.role_assignment_id }}
+          TEMPLATE_REPOSITORY: ${{ steps.request.outputs.template_repository }}
+          WORKSPACE_ID: ${{ steps.fabric.outputs.workspace_id }}
+        shell: bash
+        run: |
+          created_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "<!-- citizen-dev-lifecycle repository=$ORGANIZATION/$REPOSITORY_NAME repository_id=$REPOSITORY_ID created_at=$created_at -->
+          <!-- citizen-dev-rayfin workspace_id=$WORKSPACE_ID role_assignment_id=$ROLE_ASSIGNMENT_ID -->
+          Created [$ORGANIZATION/$REPOSITORY_NAME](https://github.com/$ORGANIZATION/$REPOSITORY_NAME) from \`$TEMPLATE_REPOSITORY\` and configured Rayfin deployment to Fabric workspace \`$WORKSPACE_ID\`.
+
+          The initial deployment has been triggered. The deployment workflow included by the template runs on pushes to \`main\`, calls \`rayfin up\`, and verifies the deployment with \`rayfin up status\`. Closing this issue deletes the managed repository; it expires automatically after seven days."
+
+          state="$(gh api "/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" --jq '.state')"
+          if [[ "$state" == "closed" ]]; then
+            gh workflow run delete-rayfin.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$GITHUB_REF_NAME" \
+              -f issue_number="$ISSUE_NUMBER" \
+              -f reason=requested
+          fi
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Rayfin provisioning failed. See the [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) for details."
