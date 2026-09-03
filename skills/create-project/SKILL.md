@@ -46,7 +46,102 @@ Turn the business problem into a concise, non-sensitive description. Validate th
 
 ## Create the request
 
-Create exactly one issue in `citizen-dev-proserv/central-hub`. Preserve the required headings and allowed values:
+Create exactly one issue in `citizen-dev-proserv/central-hub`. Use the issue form matching the selected project type. Preserve its title prefix, field labels, and allowed values exactly because the provisioning workflows parse them.
+
+### Azure project issue template
+
+Use this form for `citizen-dev-proserv/test-template`:
+
+```yaml
+name: Create a repository
+description: Create a repository in citizen-dev-proserv from the approved template
+title: "[Create repository] "
+body:
+  - type: markdown
+    attributes:
+      value: Provide the settings for the new repository.
+  - type: input
+    id: repository-name
+    attributes:
+      label: Repository name
+      description: Use letters, numbers, periods, underscores, and hyphens only.
+      placeholder: my-new-repository
+    validations:
+      required: true
+  - type: input
+    id: description
+    attributes:
+      label: Description
+      placeholder: A short description of the repository
+  - type: dropdown
+    id: template-repository
+    attributes:
+      label: Template repository
+      options:
+        - citizen-dev-proserv/test-template
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Visibility
+      options:
+        - private
+        - internal
+      default: 0
+    validations:
+      required: true
+```
+
+### Rayfin project issue template
+
+Use this form for a Fabric-hosted Rayfin application:
+
+```yaml
+name: Provision a Rayfin app
+description: Create a Rayfin app repository with a development deployment workflow
+title: "[Provision Rayfin] "
+body:
+  - type: markdown
+    attributes:
+      value: Create a Rayfin app from the standard template. Authentication and development deployment settings are configured automatically.
+  - type: input
+    id: repository-name
+    attributes:
+      label: Repository name
+      description: Use letters, numbers, periods, underscores, and hyphens only.
+      placeholder: my-rayfin-app
+    validations:
+      required: true
+  - type: input
+    id: description
+    attributes:
+      label: Description
+      placeholder: A short description of the app
+  - type: dropdown
+    id: template-repository
+    attributes:
+      label: Template repository
+      options:
+        - citizen-dev-proserv/services-analytics-dashboard-template
+        - citizen-dev-proserv/services-crud-tracker-template
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Visibility
+      options:
+        - private
+        - internal
+      default: 0
+    validations:
+      required: true
+```
+
+GitHub renders either form into an issue body with these headings. Verify the rendered body before submission:
 
 ```markdown
 ### Repository name
@@ -76,7 +171,4 @@ After opening the issue:
 6. Tell the user the project expires seven days after creation, receives a warning after six days, and is deleted immediately if the lifecycle issue is closed.
 
 Do not expose tokens, tenant IDs, subscription IDs, workspace IDs, or generated secrets in the response.
-    attributes:
-
-      label: Description
 
