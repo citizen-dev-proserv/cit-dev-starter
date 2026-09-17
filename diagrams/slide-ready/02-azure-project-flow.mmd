@@ -1,0 +1,44 @@
+%%{init: {"theme":"base","flowchart":{"nodeSpacing":30,"rankSpacing":42,"curve":"basis"},"themeVariables":{"fontFamily":"Aptos, Calibri, Arial","fontSize":"17px","textColor":"#0F172A","lineColor":"#475569","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"}}}%%
+flowchart LR
+    subgraph GitHub["GITHUB"]
+        Issue["[Create repository]<br/>issue"]
+        Hub["Hub provision<br/>workflow"]
+        Repo["Template-generated<br/>repository"]
+        Deploy["deploy.yml<br/>build + Bicep"]
+        Issue --> Hub --> Repo --> Deploy
+    end
+
+    subgraph Entra["MICROSOFT ENTRA ID"]
+        OIDC["OIDC federation<br/>repo ID + main"]
+        DeployID["id-gh-*<br/>deployment identity"]
+        PullID["id-aca-*<br/>pull identity"]
+        OIDC --> DeployID
+    end
+
+    subgraph Shared["SHARED AZURE"]
+        ACR["Azure Container Registry<br/>citizen-dev/repo"]
+    end
+
+    subgraph Project["PROJECT RESOURCE GROUP"]
+        RG["Contributor scope"]
+        ACA["Container App<br/>external :8000"]
+        RG --> ACA
+    end
+
+    Hub --> OIDC
+    Hub --> PullID
+    Deploy --> DeployID
+    DeployID -->|"ABAC Writer"| ACR
+    DeployID --> RG
+    Deploy -->|"SHA + latest"| ACR
+    PullID -->|"ABAC Reader"| ACR
+    ACR -->|"image pull"| ACA
+
+    classDef github fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:2px;
+    classDef identity fill:#028090,stroke:#036672,color:#FFFFFF,stroke-width:2px;
+    classDef shared fill:#7C3AED,stroke:#6D28D9,color:#FFFFFF,stroke-width:2px;
+    classDef project fill:#16803A,stroke:#166534,color:#FFFFFF,stroke-width:2px;
+    class Issue,Hub,Repo,Deploy github;
+    class OIDC,DeployID,PullID identity;
+    class ACR shared;
+    class RG,ACA project;

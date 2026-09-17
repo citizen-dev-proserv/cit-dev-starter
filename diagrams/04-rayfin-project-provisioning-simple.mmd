@@ -1,0 +1,20 @@
+%%{init: {"theme":"base","sequence":{"actorMargin":45,"boxMargin":8,"diagramMarginX":28,"diagramMarginY":18,"messageMargin":28,"mirrorActors":false,"noteMargin":8,"useMaxWidth":true},"themeVariables":{"fontFamily":"Aptos, Calibri, Arial","fontSize":"17px","primaryColor":"#2563EB","primaryTextColor":"#FFFFFF","primaryBorderColor":"#1D4ED8","actorBkg":"#1E2761","actorBorder":"#1E2761","actorTextColor":"#FFFFFF","actorLineColor":"#94A3B8","signalColor":"#475569","signalTextColor":"#0F172A","labelBoxBkgColor":"#F8FAFC","labelBoxBorderColor":"#CBD5E1","labelTextColor":"#0F172A","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","noteTextColor":"#0F172A"}}}%%
+sequenceDiagram
+    autonumber
+    participant User as Citizen developer
+    participant Hub as Central Hub
+    participant GH as GitHub
+    participant ID as Azure identity
+    participant Fabric as Fabric workspace
+    participant Repo as Rayfin repository
+
+    User->>Hub: Open approved Rayfin request
+    Hub->>GH: Validate request and generate repository
+    Hub->>ID: Create managed identity and OIDC trust
+    Hub->>Fabric: Grant identity Contributor
+    Hub->>Repo: Set variables and configure Rayfin ID
+    Hub->>Repo: Push configuration to main
+    Repo->>ID: Exchange GitHub OIDC token
+    Repo->>Fabric: Run rayfin up and verify status
+    Hub->>GH: Protect workflows and Rayfin configuration
+    Hub-->>User: Record repository lifecycle in issue

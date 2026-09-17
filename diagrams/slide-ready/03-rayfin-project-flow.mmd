@@ -1,0 +1,38 @@
+%%{init: {"theme":"base","flowchart":{"nodeSpacing":30,"rankSpacing":42,"curve":"basis"},"themeVariables":{"fontFamily":"Aptos, Calibri, Arial","fontSize":"17px","textColor":"#0F172A","lineColor":"#475569","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"}}}%%
+flowchart LR
+    subgraph GitHub["GITHUB"]
+        Issue["[Provision Rayfin]<br/>issue"]
+        Hub["Hub provision<br/>workflow"]
+        Repo["Rayfin template<br/>repository"]
+        Deploy["deploy.yml<br/>rayfin up + status"]
+        Issue --> Hub --> Repo --> Deploy
+    end
+
+    subgraph Identity["AZURE + IDENTITY"]
+        RG["rg-cd-repoId"]
+        OIDC["OIDC federation<br/>repo ID + main"]
+        ManagedID["id-gh-repoId<br/>Fabric Contributor"]
+        RG --> ManagedID
+        OIDC --> ManagedID
+    end
+
+    subgraph Fabric["MICROSOFT FABRIC"]
+        Workspace["Shared development<br/>workspace"]
+        Backend["Rayfin AppBackend"]
+        Services["Auth + MSSQL data<br/>+ static hosting"]
+        Workspace --> Backend --> Services
+    end
+
+    Hub --> RG
+    Hub --> OIDC
+    Hub -->|"grant role"| Workspace
+    Deploy --> OIDC
+    ManagedID --> Workspace
+    Deploy -->|"Fabric token"| Backend
+
+    classDef github fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:2px;
+    classDef identity fill:#028090,stroke:#036672,color:#FFFFFF,stroke-width:2px;
+    classDef fabric fill:#7C3AED,stroke:#6D28D9,color:#FFFFFF,stroke-width:2px;
+    class Issue,Hub,Repo,Deploy github;
+    class RG,OIDC,ManagedID identity;
+    class Workspace,Backend,Services fabric;

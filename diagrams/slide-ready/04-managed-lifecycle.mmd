@@ -1,0 +1,42 @@
+%%{init: {"theme":"base","flowchart":{"nodeSpacing":30,"rankSpacing":40,"curve":"basis"},"themeVariables":{"fontFamily":"Aptos, Calibri, Arial","fontSize":"17px","textColor":"#0F172A","lineColor":"#475569","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"}}}%%
+flowchart LR
+    Issue["Open lifecycle issue<br/>bot metadata marker"]
+    Active["Managed project<br/>repository + resources"]
+    Scan["Daily expiry scan<br/>created_at from marker"]
+    Decision{"Age or<br/>issue state"}
+
+    subgraph Trigger["DELETION TRIGGER"]
+        Warn["6 days<br/>warning comment"]
+        Delete["7 days or closed<br/>dispatch delete workflow"]
+    end
+
+    subgraph Cleanup["TYPE-SPECIFIC CLEANUP"]
+        Azure["Azure<br/>images + roles + RG"]
+        Rayfin["Rayfin<br/>AppBackend + identity + RG"]
+    end
+
+    RepoDelete["Delete repository<br/>using immutable repo ID"]
+    Audit["Closed hub issue<br/>retained as audit record"]
+
+    Issue --> Active --> Scan --> Decision
+    Decision --> Warn
+    Warn --> Scan
+    Decision --> Delete
+    Delete --> Azure
+    Delete --> Rayfin
+    Azure --> RepoDelete
+    Rayfin --> RepoDelete
+    RepoDelete --> Audit
+
+    classDef github fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:2px;
+    classDef active fill:#16803A,stroke:#166534,color:#FFFFFF,stroke-width:2px;
+    classDef warn fill:#D97706,stroke:#B45309,color:#FFFFFF,stroke-width:2px;
+    classDef delete fill:#DC2626,stroke:#B91C1C,color:#FFFFFF,stroke-width:2px;
+    classDef cleanup fill:#7C3AED,stroke:#6D28D9,color:#FFFFFF,stroke-width:2px;
+    classDef audit fill:#475569,stroke:#334155,color:#FFFFFF,stroke-width:2px;
+    class Issue,Scan github;
+    class Active active;
+    class Decision,Warn warn;
+    class Delete,RepoDelete delete;
+    class Azure,Rayfin cleanup;
+    class Audit audit;

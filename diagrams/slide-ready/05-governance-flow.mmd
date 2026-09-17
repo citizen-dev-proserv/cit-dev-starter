@@ -1,0 +1,50 @@
+%%{init: {"theme":"base","flowchart":{"nodeSpacing":28,"rankSpacing":42,"curve":"basis"},"themeVariables":{"fontFamily":"Aptos, Calibri, Arial","fontSize":"17px","textColor":"#0F172A","lineColor":"#475569","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"}}}%%
+flowchart LR
+    Admin["Platform<br/>administrator"]
+    Developer["Citizen developer<br/>+ coding agent"]
+
+    subgraph Platform["PLATFORM-OWNED CONTROL PLANE"]
+        Catalog["Approved templates<br/>and issue forms"]
+        Hub["Central Hub<br/>provision + expire + delete"]
+        Policy["Repository ruleset<br/>protected paths"]
+        Catalog --> Hub --> Policy
+    end
+
+    subgraph Spoke["GENERATED SPOKE REPOSITORY"]
+        Editable["Editable surface<br/>UI + business logic + data model"]
+        Protected["Protected surface<br/>workflows + infra/config"]
+        Main["main branch<br/>deployment trigger"]
+        Editable --> Main
+        Protected --> Main
+    end
+
+    subgraph Trust["PER-PROJECT TRUST BOUNDARY"]
+        OIDC["OIDC subject<br/>repo ID + main"]
+        Identity["Managed identity<br/>scoped cloud roles"]
+        OIDC --> Identity
+    end
+
+    Runtime["Azure or Fabric<br/>application runtime"]
+    Lifecycle["Lifecycle issue<br/>owner + age + deletion"]
+
+    Admin --> Catalog
+    Developer --> Editable
+    Policy --> Protected
+    Hub --> OIDC
+    Main --> OIDC
+    Identity --> Runtime
+    Hub --> Lifecycle
+    Lifecycle -. "close or 7-day expiry" .-> Hub
+
+    classDef person fill:#1E2761,stroke:#1E2761,color:#FFFFFF,stroke-width:2px;
+    classDef control fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:2px;
+    classDef editable fill:#16803A,stroke:#166534,color:#FFFFFF,stroke-width:2px;
+    classDef protected fill:#DC2626,stroke:#B91C1C,color:#FFFFFF,stroke-width:2px;
+    classDef identity fill:#028090,stroke:#036672,color:#FFFFFF,stroke-width:2px;
+    classDef lifecycle fill:#D97706,stroke:#B45309,color:#FFFFFF,stroke-width:2px;
+    class Admin,Developer person;
+    class Catalog,Hub,Policy,Main control;
+    class Editable,Runtime editable;
+    class Protected protected;
+    class OIDC,Identity identity;
+    class Lifecycle lifecycle;

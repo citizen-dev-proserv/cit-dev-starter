@@ -1,0 +1,41 @@
+%%{init: {"theme":"base","flowchart":{"nodeSpacing":32,"rankSpacing":45,"curve":"basis"},"themeVariables":{"fontFamily":"Aptos, Calibri, Arial","fontSize":"18px","textColor":"#0F172A","lineColor":"#475569","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"}}}%%
+flowchart LR
+    User["Citizen<br/>developer"]
+
+    subgraph Control["GITHUB CONTROL PLANE"]
+        Issue["Provisioning issue<br/>type + template + visibility"]
+        Hub["Central Hub workflow<br/>validate + orchestrate"]
+        Repo["Generated repository<br/>template + variables + ruleset"]
+        Record["Lifecycle marker<br/>repo ID + created time"]
+        Issue --> Hub --> Repo
+        Hub --> Record
+    end
+
+    subgraph Identity["IDENTITY BOUNDARY"]
+        OIDC["GitHub OIDC<br/>main branch subject"]
+        ManagedID["Per-project<br/>managed identity"]
+        OIDC --> ManagedID
+    end
+
+    subgraph Runtime["DEPLOYMENT TARGET"]
+        Pipeline["Protected workflow<br/>push to main"]
+        Target["Azure Container App<br/>or Fabric AppBackend"]
+        Pipeline --> Target
+    end
+
+    User --> Issue
+    Repo --> Pipeline
+    Pipeline --> OIDC
+    ManagedID --> Target
+    Record -. "close or expire" .-> Hub
+
+    classDef person fill:#1E2761,stroke:#1E2761,color:#FFFFFF,stroke-width:2px;
+    classDef github fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:2px;
+    classDef identity fill:#028090,stroke:#036672,color:#FFFFFF,stroke-width:2px;
+    classDef runtime fill:#16803A,stroke:#166534,color:#FFFFFF,stroke-width:2px;
+    classDef lifecycle fill:#D97706,stroke:#B45309,color:#FFFFFF,stroke-width:2px;
+    class User person;
+    class Issue,Hub,Repo,Pipeline github;
+    class OIDC,ManagedID identity;
+    class Target runtime;
+    class Record lifecycle;
