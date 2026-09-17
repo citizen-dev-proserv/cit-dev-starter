@@ -9,7 +9,7 @@ The initial setup creates the base resources and identities to provision citizen
 2. Create a new resource group for the hub-and-spoke platform. This resource group will contain the hub repository resources and any shared resources.
 3. Within the resource group, create a managed identity and assign it the following Azure role assignments:
    - Contributor on the subscription
-   - Role Based Access Control (RBAC) on the subscription
+   - Role Based Access Control (RBAC) Administrator on the subscription
    - Container Registry Repository Contributor on the resource group
 4. Within the same resource group, create an Azure container registry (ACR) to store the docker images for the hub-and-spoke platform. This POC uses the ACR to demonstrate shared resource usage.  
 5. Create federated credentials for the managed identity to allow it to be used in an actions workflow. This can be done at a later time if the GitHub repo has not been created yet. You will need the organization name+id and the repository name+id to create the federated credentials. The federated credentials will allow the GitHub actions workflow to use the managed identity to deploy resources in Azure. This demo uses "Entity" as main branch but a GitHub Environment is a better production practice. 
