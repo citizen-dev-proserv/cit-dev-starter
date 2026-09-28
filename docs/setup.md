@@ -23,7 +23,7 @@ The initial setup creates the base resources and identities to provision citizen
 
 ## GitHub Setup
 1. Create a new GitHub organization or use an existing one. The organization will contain the hub-and-spoke platform repository and any citizen developer project repositories.
-2. Create a new repository as the hub. This repo will handle spoke project creation and management. Add this repo's code into the hub.
+2. Create a new repository as the hub. This repo will handle spoke project creation and management. Add the `/hub` directory's code into the hub.
 3. Create a fine-grained personal access token with access to the organization. It will read/write access to actions, actions variables, administration, contents, and secrets. It will also need read access to metadata which will be automatically added when the other permissions are added.
 4. Add the required secrets and variables to the hub repository. The secrets and variables will be used in the GitHub actions workflow to deploy resources in Azure and Fabric. The required secrets and variables are:
 Secrets:
