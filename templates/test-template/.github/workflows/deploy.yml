@@ -20,6 +20,7 @@ env:
   IMAGE_TAG: ${{ github.sha }}
   AZURE_SHARED_RESOURCE_GROUP: ${{ vars.AZURE_SHARED_RESOURCE_GROUP }}
   ACA_ACR_IDENTITY_ID: ${{ vars.ACA_ACR_IDENTITY_ID }}
+  AZURE_CONTAINER_APP_LOCATION: ${{ vars.AZURE_CONTAINER_APP_LOCATION }}
 
 jobs:
   build-test-deploy:
@@ -53,6 +54,11 @@ jobs:
       - name: Deploy Azure Container App
         shell: bash
         run: |
+          if [[ -z "${AZURE_CONTAINER_APP_LOCATION}" ]]; then
+            echo "AZURE_CONTAINER_APP_LOCATION must be set." >&2
+            exit 1
+          fi
+
           container_app_url=$(az deployment group create \
             --name "deploy-${GITHUB_RUN_ID}" \
             --resource-group "${AZURE_RESOURCE_GROUP}" \
@@ -62,9 +68,11 @@ jobs:
               imageTag="${IMAGE_TAG}" \
               acrLoginServer="${ACR_NAME}.azurecr.io" \
               acrPullIdentityId="${ACA_ACR_IDENTITY_ID}" \
+              location="${AZURE_CONTAINER_APP_LOCATION}" \
             --query properties.outputs.containerAppUrl.value \
             --output tsv)
 
           echo "### Deployment complete" >> "${GITHUB_STEP_SUMMARY}"
           echo "Your app is running at [${container_app_url}](${container_app_url})." >> "${GITHUB_STEP_SUMMARY}"
+          echo "Region: ${AZURE_CONTAINER_APP_LOCATION}" >> "${GITHUB_STEP_SUMMARY}"
           echo "Container App URL: ${container_app_url}"

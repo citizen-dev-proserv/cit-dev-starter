@@ -14,7 +14,7 @@ The platform lets citizen developers focus on solving business problems while se
 
 Together, these layers provide builders with a fast, consistent path from idea to deployed application without requiring them to become cloud or security specialists.
 
-### GitHub Copilot as the citizen developer experience
+### GitHub Copilot App as the citizen developer experience
 
 Citizen developers can use the GitHub Copilot app as the primary conversational surface for the platform. They describe what they want to create or change in natural language, and Copilot uses the project skills and approved workflows to provision, update, or retire the application. This gives builders an approachable experience while keeping source control, deployment, identity, policy, and cloud resources inside the governed platform.
 

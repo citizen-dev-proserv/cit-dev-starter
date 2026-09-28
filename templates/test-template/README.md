@@ -27,10 +27,13 @@ Configure these required GitHub Actions values:
 - Repository variable `AZURE_RESOURCE_GROUP`: the pre-provisioned application resource group
 - Repository variable `ACR_NAME`: the existing registry name, without `.azurecr.io`
 - Repository variable `ACA_ACR_IDENTITY_ID`: the resource ID of the existing user-assigned identity with ACR pull access
+- Repository variable `AZURE_CONTAINER_APP_LOCATION`: the deployment region
 - Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`
 
 The Azure identity must use federated credentials for this repository and be able to
 deploy resources in the application resource group and push images to the registry.
 The identity specified by `ACA_ACR_IDENTITY_ID` and its ACR pull role assignment must
 be provisioned separately. Container sizing and scaling are fixed in
-[the resource template](infra/resources.bicep).
+[the resource template](infra/resources.bicep). The deployment uses only the region in
+`AZURE_CONTAINER_APP_LOCATION`; deployment errors stop immediately. Later runs reuse
+the existing Container App and managed environment.

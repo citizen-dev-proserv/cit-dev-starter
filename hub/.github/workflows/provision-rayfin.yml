@@ -145,10 +145,23 @@ jobs:
             -F include_all_branches=false)"
 
           if [[ "$VISIBILITY" == "internal" ]]; then
-            gh api \
-              --method PATCH \
-              "/repos/$ORGANIZATION/$REPOSITORY_NAME" \
-              -f visibility=internal >/dev/null
+            for attempt in {1..5}; do
+              if visibility_error="$(gh api \
+                --method PATCH \
+                "/repos/$ORGANIZATION/$REPOSITORY_NAME" \
+                -f visibility=internal 2>&1 >/dev/null)"; then
+                break
+              fi
+
+              if [[ "${visibility_error,,}" != *"operation is still in progress"* ]] || (( attempt == 5 )); then
+                echo "$visibility_error" >&2
+                exit 1
+              fi
+
+              delay=$((attempt * 5))
+              echo "A previous repository operation is still in progress; retrying visibility update in $delay seconds ($attempt/5)."
+              sleep "$delay"
+            done
           fi
 
           echo "organization_id=$(jq -r '.owner.id' <<< "$response")" >> "$GITHUB_OUTPUT"

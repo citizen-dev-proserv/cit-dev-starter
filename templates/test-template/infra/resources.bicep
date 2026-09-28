@@ -1,21 +1,25 @@
 param imageName string
 param imageTag string
+param location string
+param useLocationSuffix bool = false
+param existingContainerAppName string = ''
+param existingEnvironmentName string = ''
 param acrLoginServer string
 param acrPullIdentityId string
 
-var resourceSuffix = uniqueString(resourceGroup().id)
-var containerAppEnvironmentName = 'cae-${resourceSuffix}'
-var containerAppName = 'ca-${resourceSuffix}'
+var resourceSuffix = useLocationSuffix ? uniqueString(resourceGroup().id, location) : uniqueString(resourceGroup().id)
+var containerAppEnvironmentName = empty(existingEnvironmentName) ? 'cae-${resourceSuffix}' : existingEnvironmentName
+var containerAppName = empty(existingContainerAppName) ? 'ca-${resourceSuffix}' : existingContainerAppName
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: containerAppEnvironmentName
-  location: resourceGroup().location
+  location: location
   properties: {}
 }
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: containerAppName
-  location: resourceGroup().location
+  location: location
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
