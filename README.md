@@ -18,6 +18,8 @@ Together, these layers provide builders with a fast, consistent path from idea t
 
 Citizen developers can use the GitHub Copilot app as the primary conversational surface for the platform. They describe what they want to create or change in natural language, and Copilot uses the project skills and approved workflows to provision, update, or retire the application. This gives builders an approachable experience while keeping source control, deployment, identity, policy, and cloud resources inside the governed platform.
 
+In addition, canvases give the citizen developer a way to see the changes in their application as they are working with their agent to build it. Having both textual and visual communication of what is being built. This gives immediate feedback of if the agent properly operated as requested and what the change looks like without having to deploy the application to view. Even better the agent manages the startup of the app, so citizen developers do not need to learn the underlying terminal commands required to run the application.
+
 ## How it works
 
 1. A builder requests a project through a GitHub issue in the central hub.
