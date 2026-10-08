@@ -21,6 +21,9 @@ param existingEnvironmentName string = ''
 param acrLoginServer string
 param acrPullIdentityId string
 
+@description('Value for the PROVISIONED_BY cost-management tag.')
+param provisionedBy string
+
 module application 'resources.bicep' = {
   name: 'application-${uniqueString(resourceGroup().id, imageTag, location)}'
   params: {
@@ -32,6 +35,7 @@ module application 'resources.bicep' = {
     existingEnvironmentName: existingEnvironmentName
     acrLoginServer: acrLoginServer
     acrPullIdentityId: acrPullIdentityId
+    provisionedBy: provisionedBy
   }
 }
 

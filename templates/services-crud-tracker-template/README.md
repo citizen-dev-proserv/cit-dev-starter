@@ -154,6 +154,9 @@ services-crud-tracker/
 | `npm run test` | Runs the Vitest suite once. |
 | `npm run rayfin:up` | Deploys/attaches the Rayfin backend. |
 
+Rayfin commands resolve `@microsoft/rayfin-cli@latest` at runtime so local development and CI do
+not remain pinned to an outdated CLI release.
+
 ## Data model & sample data
 
 One entity models the domain. It uses Rayfin's **default permissions** — any authenticated caller

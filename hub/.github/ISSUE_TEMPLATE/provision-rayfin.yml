@@ -23,8 +23,8 @@ body:
     attributes:
       label: Template repository
       options:
-        - citizen-dev-proserv/services-analytics-dashboard-template
-        - citizen-dev-proserv/services-crud-tracker-template
+        - services-analytics-dashboard-template
+        - services-crud-tracker-template
       default: 0
     validations:
       required: true

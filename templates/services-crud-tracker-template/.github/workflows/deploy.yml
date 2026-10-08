@@ -56,10 +56,10 @@ jobs:
       - name: Deploy to Fabric
         shell: bash
         run: >-
-          npx rayfin up
+          npx --yes @microsoft/rayfin-cli@latest up
           --tenant "$AZURE_TENANT_ID"
           --workspace-id "$RAYFIN_WORKSPACE_ID"
           --yes
 
       - name: Verify deployment
-        run: npx rayfin up status
+        run: npx --yes @microsoft/rayfin-cli@latest up status

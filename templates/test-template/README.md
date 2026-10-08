@@ -28,6 +28,7 @@ Configure these required GitHub Actions values:
 - Repository variable `ACR_NAME`: the existing registry name, without `.azurecr.io`
 - Repository variable `ACA_ACR_IDENTITY_ID`: the resource ID of the existing user-assigned identity with ACR pull access
 - Repository variable `AZURE_CONTAINER_APP_LOCATION`: the deployment region
+- Repository variable `PROVISIONED_BY`: the owner or provisioning source recorded on created resources for cost management
 - Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`
 
 The Azure identity must use federated credentials for this repository and be able to
@@ -36,4 +37,6 @@ The identity specified by `ACA_ACR_IDENTITY_ID` and its ACR pull role assignment
 be provisioned separately. Container sizing and scaling are fixed in
 [the resource template](infra/resources.bicep). The deployment uses only the region in
 `AZURE_CONTAINER_APP_LOCATION`; deployment errors stop immediately. Later runs reuse
-the existing Container App and managed environment.
+the existing Container App and managed environment. The deployment applies the
+`PROVISIONED_BY` tag to both resources so costs can be grouped or filtered by that tag
+in Azure Cost Management.

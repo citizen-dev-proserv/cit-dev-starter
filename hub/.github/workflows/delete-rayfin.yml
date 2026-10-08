@@ -32,7 +32,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[Provision Rayfin]')
     runs-on: ubuntu-latest
     env:
-      ORGANIZATION: citizen-dev-proserv
+      ORGANIZATION: ${{ github.repository_owner }}
     steps:
       - name: Resolve managed Rayfin repository
         id: lifecycle

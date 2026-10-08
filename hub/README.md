@@ -1,6 +1,6 @@
 # Central Hub
 
-Central Hub is the provisioning and lifecycle control plane for short-lived citizen-development projects in the `citizen-dev-proserv` GitHub organization. It turns a GitHub issue into a ready-to-use repository with the template, cloud identity, deployment settings, and access controls required by the selected project type.
+Central Hub is the provisioning and lifecycle control plane for short-lived citizen-development projects in its GitHub organization. It turns a GitHub issue into a ready-to-use repository with the template, cloud identity, deployment settings, and access controls required by the selected project type.
 
 ## What it provides
 

@@ -32,7 +32,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[Create repository]')
     runs-on: ubuntu-latest
     env:
-      ORGANIZATION: citizen-dev-proserv
+      ORGANIZATION: ${{ github.repository_owner }}
       AZURE_SHARED_RESOURCE_GROUP: ${{ vars.AZURE_SHARED_RESOURCE_GROUP }}
     steps:
       - name: Resolve managed repository

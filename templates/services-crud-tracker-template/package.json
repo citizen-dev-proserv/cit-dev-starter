@@ -9,22 +9,22 @@
     "description": "Fabric-authenticated CRUD app on a Rayfin MSSQL backend — create, edit, and delete service requests with live KPIs and full write-back, styled like the Contoso analytics dashboard."
   },
   "scripts": {
-    "predev": "rayfin env --framework vite",
-    "prebuild": "rayfin env --framework vite",
-    "dev": "rayfin up --exclude-services staticHosting && vite",
+    "predev": "npx --yes @microsoft/rayfin-cli@latest env --framework vite",
+    "prebuild": "npx --yes @microsoft/rayfin-cli@latest env --framework vite",
+    "dev": "npx --yes @microsoft/rayfin-cli@latest up --exclude-services staticHosting && vite",
     "build": "tsc -b && vite build",
     "build:fabric": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "rayfin:up": "rayfin up"
+    "rayfin:up": "npx --yes @microsoft/rayfin-cli@latest up"
   },
   "dependencies": {
     "@fontsource-variable/roboto-flex": "^5.3.0",
     "@fontsource/roboto-condensed": "^5.3.0",
-    "@microsoft/rayfin-auth-provider-fabric": "^1.33.2",
-    "@microsoft/rayfin-client": "^1.33.2",
-    "@microsoft/rayfin-core": "^1.33.2",
+    "@microsoft/rayfin-auth-provider-fabric": "^1.36.2",
+    "@microsoft/rayfin-client": "^1.36.2",
+    "@microsoft/rayfin-core": "^1.36.2",
     "@tailwindcss/vite": "^4.1.11",
     "d3": "^7.9.0",
     "react": "^19.0.0",
@@ -33,7 +33,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
-    "@microsoft/rayfin-cli": "^1.33.2",
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.2",

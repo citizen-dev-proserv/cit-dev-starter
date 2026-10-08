@@ -19,7 +19,7 @@ jobs:
     if: startsWith(github.event.issue.title, '[Create repository]')
     runs-on: ubuntu-latest
     env:
-      ORGANIZATION: citizen-dev-proserv
+      ORGANIZATION: ${{ github.repository_owner }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       AZURE_SHARED_RESOURCE_GROUP: ${{ vars.AZURE_SHARED_RESOURCE_GROUP }}
     steps:
@@ -53,7 +53,7 @@ jobs:
           fi
 
           case "$template_repository" in
-            citizen-dev-proserv/test-template)
+            test-template)
               ;;
             *)
               echo "Template repository is not approved." >&2
@@ -64,7 +64,7 @@ jobs:
           output_delimiter="OUTPUT_$(openssl rand -hex 16)"
           {
             echo "repository_name=$repository_name"
-            echo "template_repository=$template_repository"
+            echo "template_repository=$ORGANIZATION/$template_repository"
             echo "visibility=$visibility"
             echo "description<<$output_delimiter"
             echo "$description"
@@ -224,7 +224,7 @@ jobs:
           gh variable set ACR_NAME --repo "$repository" --body "$ACR_NAME"
           gh variable set ACR_REPOSITORY --repo "$repository" --body "$ACR_REPOSITORY"
           gh variable set ACA_ACR_IDENTITY_ID --repo "$repository" --body "$ACA_ACR_IDENTITY_ID"
-          gh variable set AZURE_CONTAINER_APP_LOCATION --repo "$repository" --body "southcentralus"
+          gh variable set AZURE_CONTAINER_APP_LOCATION --repo "$repository" --body "${{ vars.AZURE_LOCATION}}"
 
       - name: Trigger provisioned repository workflow
         env:
@@ -292,7 +292,6 @@ jobs:
           REPOSITORY_NAME: ${{ steps.request.outputs.repository_name }}
           REPOSITORY_ID: ${{ steps.create.outputs.repository_id }}
           GITHUB_EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ORGANIZATION: citizen-dev-proserv
           TEMPLATE_REPOSITORY: ${{ steps.request.outputs.template_repository }}
 
       - name: Report failure

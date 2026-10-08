@@ -21,6 +21,7 @@ env:
   AZURE_SHARED_RESOURCE_GROUP: ${{ vars.AZURE_SHARED_RESOURCE_GROUP }}
   ACA_ACR_IDENTITY_ID: ${{ vars.ACA_ACR_IDENTITY_ID }}
   AZURE_CONTAINER_APP_LOCATION: ${{ vars.AZURE_CONTAINER_APP_LOCATION }}
+  PROVISIONED_BY: ${{ vars.PROVISIONED_BY }}
 
 jobs:
   build-test-deploy:
@@ -58,6 +59,10 @@ jobs:
             echo "AZURE_CONTAINER_APP_LOCATION must be set." >&2
             exit 1
           fi
+          if [[ -z "${PROVISIONED_BY}" ]]; then
+            echo "PROVISIONED_BY must be set." >&2
+            exit 1
+          fi
 
           container_app_url=$(az deployment group create \
             --name "deploy-${GITHUB_RUN_ID}" \
@@ -68,6 +73,7 @@ jobs:
               imageTag="${IMAGE_TAG}" \
               acrLoginServer="${ACR_NAME}.azurecr.io" \
               acrPullIdentityId="${ACA_ACR_IDENTITY_ID}" \
+              provisionedBy="${PROVISIONED_BY}" \
               location="${AZURE_CONTAINER_APP_LOCATION}" \
             --query properties.outputs.containerAppUrl.value \
             --output tsv)

@@ -6,20 +6,26 @@ param existingContainerAppName string = ''
 param existingEnvironmentName string = ''
 param acrLoginServer string
 param acrPullIdentityId string
+param provisionedBy string
 
 var resourceSuffix = useLocationSuffix ? uniqueString(resourceGroup().id, location) : uniqueString(resourceGroup().id)
 var containerAppEnvironmentName = empty(existingEnvironmentName) ? 'cae-${resourceSuffix}' : existingEnvironmentName
 var containerAppName = empty(existingContainerAppName) ? 'ca-${resourceSuffix}' : existingContainerAppName
+var resourceTags = {
+  PROVISIONED_BY: provisionedBy
+}
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: containerAppEnvironmentName
   location: location
+  tags: resourceTags
   properties: {}
 }
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: containerAppName
   location: location
+  tags: resourceTags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {

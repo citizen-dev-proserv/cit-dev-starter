@@ -1,5 +1,5 @@
 name: Create a repository
-description: Create a repository in citizen-dev-proserv from the approved template
+description: Create a repository from the approved template
 title: "[Create repository] "
 body:
   - type: markdown
@@ -23,7 +23,7 @@ body:
     attributes:
       label: Template repository
       options:
-        - citizen-dev-proserv/test-template
+        - test-template
       default: 0
     validations:
       required: true

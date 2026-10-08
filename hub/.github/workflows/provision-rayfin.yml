@@ -19,7 +19,7 @@ jobs:
     if: startsWith(github.event.issue.title, '[Provision Rayfin]')
     runs-on: ubuntu-latest
     env:
-      ORGANIZATION: citizen-dev-proserv
+      ORGANIZATION: ${{ github.repository_owner }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
     steps:
       - name: Read and validate request
@@ -53,8 +53,8 @@ jobs:
           fi
 
           case "$template_repository" in
-            citizen-dev-proserv/services-analytics-dashboard-template|\
-            citizen-dev-proserv/services-crud-tracker-template)
+            services-analytics-dashboard-template|\
+            services-crud-tracker-template)
               ;;
             *)
               echo "Rayfin template repository is not approved." >&2
@@ -79,7 +79,7 @@ jobs:
           output_delimiter="OUTPUT_$(openssl rand -hex 16)"
           {
             echo "repository_name=$repository_name"
-            echo "template_repository=$template_repository"
+            echo "template_repository=$ORGANIZATION/$template_repository"
             echo "visibility=$visibility"
             echo "rayfin_item_id=$rayfin_item_id"
             echo "rayfin_item_name=$rayfin_item_id"
